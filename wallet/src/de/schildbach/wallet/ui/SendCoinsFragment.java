@@ -17,10 +17,15 @@
 
 package de.schildbach.wallet.ui;
 
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.math.BigInteger;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -51,6 +56,7 @@ import android.widget.CursorAdapter;
 import android.widget.ListView;
 import android.widget.PopupWindow;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.actionbarsherlock.app.SherlockFragment;
 import com.actionbarsherlock.view.ActionMode;
@@ -89,6 +95,7 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 	private WalletApplication application;
 	private ContentResolver contentResolver;
 	private SharedPreferences prefs;
+	private BluetoothAdapter bluetoothAdapter;
 	private Wallet wallet;
 
 	private BlockchainService service;
@@ -103,6 +110,7 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 	private CurrencyAmountView amountView;
 	private CurrencyAmountView feeView;
 
+	private View bluetoothMessageView;
 	private ListView sentTransactionView;
 	private TransactionsListAdapter sentTransactionListAdapter;
 	private Button viewGo;
@@ -117,10 +125,14 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 	private Address validatedAddress = null;
 	private String receivingLabel = null;
 	private boolean isValidAmounts = false;
+
+	private String bluetoothMac;
+
 	private State state = State.INPUT;
 	private Transaction sentTransaction = null;
 
 	private static final int REQUEST_CODE_SCAN = 0;
+	private static final int REQUEST_CODE_ENABLE_BLUETOOTH = 1;
 
 	private enum State
 	{
@@ -266,7 +278,11 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 				sentTransaction = wallet.getTransaction((Sha256Hash) savedInstanceState.getSerializable("sent_transaction_hash"));
 				sentTransaction.getConfidence().addEventListener(sentTransactionConfidenceListener);
 			}
+
+			bluetoothMac = savedInstanceState.getString("bluetooth_mac");
 		}
+
+		bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
 		activity.bindService(new Intent(activity, BlockchainServiceImpl.class), serviceConnection, Context.BIND_AUTO_CREATE);
 
@@ -375,6 +391,8 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 
 		feeView = (CurrencyAmountView) view.findViewById(R.id.send_coins_fee);
 		feeView.setAmount(Constants.DEFAULT_TX_FEE, false);
+
+		bluetoothMessageView = view.findViewById(R.id.send_coins_bluetooth_message);
 
 		sentTransactionView = (ListView) view.findViewById(R.id.send_coins_sent_transaction);
 		sentTransactionListAdapter = new TransactionsListAdapter(activity, wallet, application.maxConnectedPeers());
@@ -500,6 +518,8 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 
 		if (sentTransaction != null)
 			outState.putSerializable("sent_transaction_hash", sentTransaction.getHash());
+
+		outState.putString("bluetooth_mac", bluetoothMac);
 	}
 
 	@Override
@@ -518,26 +538,35 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 	@Override
 	public void onActivityResult(final int requestCode, final int resultCode, final Intent intent)
 	{
-		if (requestCode == REQUEST_CODE_SCAN && resultCode == Activity.RESULT_OK)
+		if (resultCode == Activity.RESULT_OK)
 		{
-			final String contents = intent.getStringExtra(ScanActivity.INTENT_EXTRA_RESULT);
-			if (contents.matches("[a-zA-Z0-9]*"))
+			if (requestCode == REQUEST_CODE_SCAN)
 			{
-				update(contents, null, null);
+				final String contents = intent.getStringExtra(ScanActivity.INTENT_EXTRA_RESULT);
+				if (contents.matches("[a-zA-Z0-9]*"))
+				{
+					update(contents, null, null, null);
+				}
+				else
+				{
+					try
+					{
+						final BitcoinURI bitcoinUri = new BitcoinURI(null, contents);
+						final Address address = bitcoinUri.getAddress();
+						final String addressLabel = bitcoinUri.getLabel();
+						final String btMac = (String) bitcoinUri.getParameterByName("btmac");
+
+						update(address != null ? address.toString() : null, addressLabel, bitcoinUri.getAmount(), btMac);
+					}
+					catch (final BitcoinURIParseException x)
+					{
+						activity.parseErrorDialog(contents);
+					}
+				}
 			}
-			else
+			else if (requestCode == REQUEST_CODE_ENABLE_BLUETOOTH)
 			{
-				try
-				{
-					final BitcoinURI bitcoinUri = new BitcoinURI(null, contents);
-					final Address address = bitcoinUri.getAddress();
-					final String addressLabel = bitcoinUri.getLabel();
-					update(address != null ? address.toString() : null, addressLabel, bitcoinUri.getAmount());
-				}
-				catch (final BitcoinURIParseException x)
-				{
-					activity.parseErrorDialog(contents);
-				}
+				backgroundHandler.post(sendBluetoothRunnable);
 			}
 		}
 	}
@@ -750,6 +779,21 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 
 							sentTransaction.getConfidence().addEventListener(sentTransactionConfidenceListener);
 
+							final boolean labsBluetoothOfflineTransactions = prefs.getBoolean(
+									Constants.PREFS_KEY_LABS_BLUETOOTH_OFFLINE_TRANSACTIONS, false);
+							if (bluetoothAdapter != null && bluetoothMac != null && labsBluetoothOfflineTransactions)
+							{
+								if (bluetoothAdapter.isEnabled())
+								{
+									backgroundHandler.post(sendBluetoothRunnable);
+								}
+								else
+								{
+									// try to enable bluetooth
+									startActivityForResult(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), REQUEST_CODE_ENABLE_BLUETOOTH);
+								}
+							}
+
 							service.broadcastTransaction(sentTransaction);
 
 							final Intent result = new Intent();
@@ -768,6 +812,50 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 			}
 		});
 	}
+
+	private Runnable sendBluetoothRunnable = new Runnable()
+	{
+		public void run()
+		{
+			final byte[] serializedTx = sentTransaction.unsafeBitcoinSerialize();
+
+			BluetoothSocket socket = null;
+
+			try
+			{
+				final BluetoothDevice device = bluetoothAdapter.getRemoteDevice(bluetoothMac);
+				socket = device.createInsecureRfcommSocketToServiceRecord(Constants.BLUETOOTH_UUID);
+
+				socket.connect();
+				final DataOutputStream os = new DataOutputStream(socket.getOutputStream());
+				os.writeInt(1);
+				os.writeInt(serializedTx.length);
+				os.write(serializedTx);
+				os.close();
+
+				Toast.makeText(activity, "tx sent via bluetooth", Toast.LENGTH_LONG).show();
+			}
+			catch (final IOException x)
+			{
+				x.printStackTrace();
+				Toast.makeText(activity, "error sending tx via bluetooth: " + x.getMessage(), Toast.LENGTH_LONG).show();
+			}
+			finally
+			{
+				if (socket != null)
+				{
+					try
+					{
+						socket.close();
+					}
+					catch (final IOException x)
+					{
+						// swallow
+					}
+				}
+			}
+		}
+	};
 
 	private void handleScan()
 	{
@@ -858,6 +946,8 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 			sentTransactionListAdapter.clear();
 		}
 
+		bluetoothMessageView.setVisibility((state != State.INPUT || state != State.PREPARATION) && bluetoothMac != null ? View.VISIBLE : View.GONE);
+
 		viewCancel.setEnabled(state != State.PREPARATION);
 		viewGo.setEnabled(everythingValid());
 
@@ -896,7 +986,7 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 		return state == State.INPUT && validatedAddress != null && isValidAmounts;
 	}
 
-	public void update(final String receivingAddress, final String receivingLabel, final BigInteger amount)
+	public void update(final String receivingAddress, final String receivingLabel, final BigInteger amount, final String btMac)
 	{
 		try
 		{
@@ -917,6 +1007,8 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 			amountView.requestFocus();
 		else if (receivingAddress != null && amount != null)
 			feeView.requestFocus();
+
+		this.bluetoothMac = btMac;
 
 		updateView();
 

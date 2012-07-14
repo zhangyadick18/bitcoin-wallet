@@ -19,6 +19,7 @@ package de.schildbach.wallet;
 
 import java.io.File;
 import java.math.BigInteger;
+import java.util.UUID;
 
 import android.os.Environment;
 import android.text.format.DateUtils;
@@ -125,6 +126,7 @@ public class Constants
 	public static final String PREFS_KEY_LABS_SEND_COINS_LOW_FEE = "labs_send_coins_low_fee";
 	public static final String PREFS_KEY_LABS_TRANSACTION_DETAILS = "labs_transactions_details";
 	public static final String PREFS_KEY_LABS_BLOCK_EXPLORER = "labs_block_explorer";
+	public static final String PREFS_KEY_LABS_BLUETOOTH_OFFLINE_TRANSACTIONS = "labs_bluetooth_offline_transactions";
 	public static final String PREFS_KEY_BTC_PRECISION = "btc_precision";
 	public static final String PREFS_KEY_DISCLAIMER = "disclaimer";
 
@@ -136,4 +138,6 @@ public class Constants
 	public static final int SDK_JELLY_BEAN = 16;
 
 	public static final int MEMORY_CLASS_LOWEND = 48;
+
+	public static final UUID BLUETOOTH_UUID = UUID.fromString("3357A7BB-762D-464A-8D9A-DCA592D57D5B");
 }

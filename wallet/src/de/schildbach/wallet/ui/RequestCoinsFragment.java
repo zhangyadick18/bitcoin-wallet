@@ -21,12 +21,15 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 
 import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.nfc.NfcManager;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.v4.app.ShareCompat.IntentBuilder;
 import android.text.ClipboardManager;
 import android.view.LayoutInflater;
@@ -40,6 +43,7 @@ import android.widget.CompoundButton;
 import android.widget.CompoundButton.OnCheckedChangeListener;
 import android.widget.ImageView;
 import android.widget.Spinner;
+import android.widget.Toast;
 
 import com.actionbarsherlock.app.SherlockFragment;
 import com.actionbarsherlock.view.Menu;
@@ -48,6 +52,7 @@ import com.actionbarsherlock.view.MenuItem;
 import com.actionbarsherlock.widget.ShareActionProvider;
 import com.google.bitcoin.core.Address;
 import com.google.bitcoin.core.ECKey;
+import com.google.bitcoin.core.Transaction;
 import com.google.bitcoin.uri.BitcoinURI;
 
 import de.schildbach.wallet.AddressBookProvider;
@@ -65,9 +70,12 @@ public final class RequestCoinsFragment extends SherlockFragment implements Amou
 {
 	private AbstractWalletActivity activity;
 	private WalletApplication application;
+	private SharedPreferences prefs;
 	private NfcManager nfcManager;
 	private ClipboardManager clipboardManager;
 	private ShareActionProvider shareActionProvider;
+	private BluetoothAdapter bluetoothAdapter;
+	private BluetoothListenThread acceptThread;
 
 	private ImageView qrView;
 	private Bitmap qrCodeBitmap;
@@ -75,6 +83,11 @@ public final class RequestCoinsFragment extends SherlockFragment implements Amou
 	private Spinner addressView;
 	private CheckBox includeLabelView;
 	private View nfcEnabledView;
+	private View bluetoothEnabledView;
+
+	private String btMac;
+
+	private static final int REQUEST_CODE_ENABLE_BLUETOOTH = 0;
 
 	@Override
 	public void onAttach(final Activity activity)
@@ -82,9 +95,12 @@ public final class RequestCoinsFragment extends SherlockFragment implements Amou
 		super.onAttach(activity);
 		this.activity = (AbstractWalletActivity) activity;
 		application = (WalletApplication) activity.getApplication();
+		prefs = PreferenceManager.getDefaultSharedPreferences(activity);
 
 		nfcManager = (NfcManager) activity.getSystemService(Context.NFC_SERVICE);
 		clipboardManager = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+
+		bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 	}
 
 	@Override
@@ -128,6 +144,8 @@ public final class RequestCoinsFragment extends SherlockFragment implements Amou
 		includeLabelView = (CheckBox) view.findViewById(R.id.request_coins_fragment_include_label);
 
 		nfcEnabledView = view.findViewById(R.id.request_coins_fragment_nfc_enabled);
+
+		bluetoothEnabledView = view.findViewById(R.id.request_coins_fragment_bluetooth_enabled);
 
 		return view;
 	}
@@ -185,12 +203,22 @@ public final class RequestCoinsFragment extends SherlockFragment implements Amou
 			}
 		});
 
+		final boolean labsBluetoothOfflineTransactions = prefs.getBoolean(Constants.PREFS_KEY_LABS_BLUETOOTH_OFFLINE_TRANSACTIONS, false);
+		if (bluetoothAdapter != null && labsBluetoothOfflineTransactions)
+			maybeInitBluetoothListening();
+
 		updateView();
 	}
 
 	@Override
 	public void onPause()
 	{
+		if (acceptThread != null)
+		{
+			acceptThread.stopAccepting();
+			bluetoothEnabledView.setVisibility(View.GONE);
+		}
+
 		NfcTools.unpublish(nfcManager, activity);
 
 		amountView.setListener(null);
@@ -200,6 +228,61 @@ public final class RequestCoinsFragment extends SherlockFragment implements Amou
 		includeLabelView.setOnCheckedChangeListener(null);
 
 		super.onPause();
+	}
+
+	@Override
+	public void onActivityResult(final int requestCode, final int resultCode, final Intent data)
+	{
+		if (requestCode == REQUEST_CODE_ENABLE_BLUETOOTH && resultCode == Activity.RESULT_OK)
+		{
+			maybeInitBluetoothListening();
+
+			updateView();
+		}
+	}
+
+	private void maybeInitBluetoothListening()
+	{
+		if (!bluetoothAdapter.isEnabled())
+		{
+			// try to enable bluetooth
+			startActivityForResult(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), REQUEST_CODE_ENABLE_BLUETOOTH);
+		}
+		else
+		{
+			btMac = bluetoothAdapter.getAddress();
+
+			acceptThread = new BluetoothListenThread(bluetoothAdapter)
+			{
+				@Override
+				public void handleTx(final byte[] msg)
+				{
+					activity.runOnUiThread(new Runnable()
+					{
+						public void run()
+						{
+							// FIXME: implement
+							System.out.println("=== BTTX bluetooth message arrived");
+							Toast.makeText(activity, "BTTX bluetooth message arrived", Toast.LENGTH_LONG).show();
+
+							try
+							{
+								final Transaction tx = new Transaction(Constants.NETWORK_PARAMETERS, msg);
+								System.out.println("=== BTTX " + tx);
+								application.getWallet().receivePending(tx, null);
+							}
+							catch (final Exception x)
+							{
+								Toast.makeText(activity, "exception: " + x, Toast.LENGTH_LONG).show();
+								x.printStackTrace();
+							}
+						}
+					});
+				}
+			};
+
+			bluetoothEnabledView.setVisibility(View.VISIBLE);
+		}
 	}
 
 	@Override
@@ -248,7 +331,8 @@ public final class RequestCoinsFragment extends SherlockFragment implements Amou
 
 	private void updateView()
 	{
-		final String request = determineRequestStr();
+		final String request = determineRequestStr() + (btMac != null ? "&btmac=" + btMac : "");
+		System.out.println("===== " + request);
 
 		// update qr code
 		final int size = (int) (256 * getResources().getDisplayMetrics().density);

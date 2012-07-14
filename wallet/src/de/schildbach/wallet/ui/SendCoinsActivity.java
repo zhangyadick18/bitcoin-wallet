@@ -95,6 +95,7 @@ public final class SendCoinsActivity extends AbstractWalletActivity
 		final String address;
 		final String addressLabel;
 		final BigInteger amount;
+		final String btMac;
 
 		if ((Intent.ACTION_VIEW.equals(action) || NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)) && intentUri != null && "bitcoin".equals(scheme))
 		{
@@ -104,6 +105,7 @@ public final class SendCoinsActivity extends AbstractWalletActivity
 				address = bitcoinUri.getAddress().toString();
 				addressLabel = bitcoinUri.getLabel();
 				amount = bitcoinUri.getAmount();
+				btMac = (String) bitcoinUri.getParameterByName("btmac");
 			}
 			catch (final BitcoinURIParseException x)
 			{
@@ -116,6 +118,7 @@ public final class SendCoinsActivity extends AbstractWalletActivity
 			address = intent.getStringExtra(INTENT_EXTRA_ADDRESS);
 			addressLabel = intent.getStringExtra(INTENT_EXTRA_ADDRESS_LABEL);
 			amount = null;
+			btMac = null;
 		}
 		else
 		{
@@ -123,15 +126,15 @@ public final class SendCoinsActivity extends AbstractWalletActivity
 		}
 
 		if (address != null || amount != null)
-			updateSendCoinsFragment(address, addressLabel, amount);
+			updateSendCoinsFragment(address, addressLabel, amount, btMac);
 		else
 			longToast(R.string.send_coins_parse_address_error_msg);
 	}
 
-	private void updateSendCoinsFragment(final String receivingAddress, final String receivingLabel, final BigInteger amount)
+	private void updateSendCoinsFragment(final String receivingAddress, final String receivingLabel, final BigInteger amount, final String btMac)
 	{
 		final SendCoinsFragment sendCoinsFragment = (SendCoinsFragment) getSupportFragmentManager().findFragmentById(R.id.send_coins_fragment);
 
-		sendCoinsFragment.update(receivingAddress, receivingLabel, amount);
+		sendCoinsFragment.update(receivingAddress, receivingLabel, amount, btMac);
 	}
 }
