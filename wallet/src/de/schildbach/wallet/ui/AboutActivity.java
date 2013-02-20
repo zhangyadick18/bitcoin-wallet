@@ -45,8 +45,6 @@ public final class AboutActivity extends SherlockPreferenceActivity
 	private static final String KEY_ABOUT_CREDITS_ICON = "about_credits_icon";
 	private static final String KEY_ABOUT_AUTHOR_TWITTER = "about_author_twitter";
 	private static final String KEY_ABOUT_AUTHOR_GOOGLEPLUS = "about_author_googleplus";
-	private static final String KEY_ABOUT_MARKET_APP = "about_market_app";
-	private static final String KEY_ABOUT_MARKET_PUBLISHER = "about_market_publisher";
 
 	@Override
 	protected void onCreate(final Bundle savedInstanceState)
@@ -65,8 +63,6 @@ public final class AboutActivity extends SherlockPreferenceActivity
 		findPreference(KEY_ABOUT_CREDITS_BITCOINJ).setSummary(Constants.CREDITS_BITCOINJ_URL);
 		findPreference(KEY_ABOUT_CREDITS_ZXING).setSummary(Constants.CREDITS_ZXING_URL);
 		findPreference(KEY_ABOUT_CREDITS_ICON).setSummary(Constants.CREDITS_ICON_URL);
-		findPreference(KEY_ABOUT_MARKET_APP).setSummary(String.format(Constants.MARKET_APP_URL, getPackageName()));
-		findPreference(KEY_ABOUT_MARKET_PUBLISHER).setSummary(Constants.MARKET_PUBLISHER_URL);
 	}
 
 	@Override
@@ -119,20 +115,6 @@ public final class AboutActivity extends SherlockPreferenceActivity
 		else if (KEY_ABOUT_AUTHOR_GOOGLEPLUS.equals(key))
 		{
 			startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Constants.AUTHOR_GOOGLEPLUS_URL)));
-			finish();
-		}
-		else if (KEY_ABOUT_MARKET_APP.equals(key))
-		{
-			final Intent marketIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(String.format(Constants.MARKET_APP_URL, getPackageName())));
-			if (getPackageManager().resolveActivity(marketIntent, 0) != null)
-				startActivity(marketIntent);
-			else
-				startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(String.format(Constants.WEBMARKET_APP_URL, getPackageName()))));
-			finish();
-		}
-		else if (KEY_ABOUT_MARKET_PUBLISHER.equals(key))
-		{
-			startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Constants.MARKET_PUBLISHER_URL)));
 			finish();
 		}
 
