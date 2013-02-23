@@ -476,7 +476,7 @@ public final class WalletActivity extends AbstractWalletActivity
 				needsPassword = true;
 			}
 
-			final boolean hasPassword = passwordView.getText().toString().trim().length() > 0;
+			final boolean hasPassword = !passwordView.getText().toString().trim().isEmpty();
 
 			final Button button = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
 			button.setEnabled(hasFile && (!needsPassword || hasPassword));
