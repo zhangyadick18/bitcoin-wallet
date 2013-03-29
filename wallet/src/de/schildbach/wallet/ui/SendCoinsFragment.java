@@ -373,7 +373,7 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 		});
 
 		feeView = (CurrencyAmountView) view.findViewById(R.id.send_coins_fee);
-		feeView.setAmount(Constants.DEFAULT_TX_FEE);
+		feeView.setAmount(Constants.DEFAULT_TX_FEE, false);
 
 		sentTransactionView = (ListView) view.findViewById(R.id.send_coins_sent_transaction);
 		sentTransactionListAdapter = new TransactionsListAdapter(activity, wallet, application.maxConnectedPeers());
@@ -421,7 +421,7 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 					{
 						public void onClick(final DialogInterface dialog, final int which)
 						{
-							feeView.setAmount(Constants.DEFAULT_TX_FEE);
+							feeView.setAmount(Constants.DEFAULT_TX_FEE, false);
 						}
 					});
 				}
@@ -909,7 +909,7 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 		}
 
 		if (amount != null)
-			amountView.setAmount(amount);
+			amountView.setAmount(amount, false);
 
 		// focus
 		if (receivingAddress != null && amount == null)
@@ -931,6 +931,6 @@ public final class SendCoinsFragment extends SherlockFragment implements AmountC
 
 	public void useCalculatedAmount(final BigInteger amount)
 	{
-		amountView.setAmount(amount);
+		amountView.setAmount(amount, true);
 	}
 }
